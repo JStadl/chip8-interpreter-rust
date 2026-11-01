@@ -1,72 +1,66 @@
-use std::{collections::VecDeque, fs::{self, File}, io::{Error, Read}, path::Path};
+mod cpu;
+mod display;
+mod error;
+mod font;
+mod memory;
 
-const FONT : [u8; 80]  = [0xF0, 0x90, 0x90, 0x90, 0xF0, 
-                          0x20, 0x60, 0x20, 0x20, 0x70, 
-                          0xF0, 0x10, 0xF0, 0x80, 0xF0, 
-                          0xF0, 0x10, 0xF0, 0x10, 0xF0, 
-                          0x90, 0x90, 0xF0, 0x10, 0x10, 
-                          0xF0, 0x80, 0xF0, 0x10, 0xF0, 
-                          0xF0, 0x80, 0xF0, 0x90, 0xF0, 
-                          0xF0, 0x10, 0x20, 0x40, 0x40, 
-                          0xF0, 0x90, 0xF0, 0x90, 0xF0, 
-                          0xF0, 0x90, 0xF0, 0x10, 0xF0, 
-                          0xF0, 0x90, 0xF0, 0x90, 0x90, 
-                          0xE0, 0x90, 0xE0, 0x90, 0xE0, 
-                          0xF0, 0x80, 0x80, 0x80, 0xF0, 
-                          0xE0, 0x90, 0x90, 0x90, 0xE0, 
-                          0xF0, 0x80, 0xF0, 0x80, 0xF0, 
-                          0xF0, 0x80, 0xF0, 0x80, 0x80];
-const PROGRAM_START: usize = 0x200;
+use std::path::Path;
 
-type FrameBuffer = [[bool; 32]; 64];
+pub use display::{FrameBuffer, SCREEN_HEIGHT, SCREEN_WIDTH};
+pub use error::Chip8Error;
+
+use memory::{Addr, Memory};
+
+const NUM_REGISTERS: usize = 16;
 
 /// Struct representing the state of the Chip8 interpreter
 pub struct Chip8 {
-    memory: [u8; 4096],
-    frame_buffer: [[bool; 32]; 64],
-    stack: VecDeque<u16>,
+    memory: Memory,
+    frame_buffer: FrameBuffer,
+    pc: Addr,
+    i: Addr,
+    stack: Vec<Addr>, // stack size of 16
     delay_timer: u8,
     sound_timer: u8,
-}
-impl Default for Chip8 {
-    fn default() -> Self {
-        Chip8::new()
-    }
+    registers: [u8; NUM_REGISTERS],
 }
 
 impl Chip8 {
-    fn new() -> Self {
-        let mut chip8 = Chip8 { memory: [0; 4096], frame_buffer: [[false;32]; 64], stack: VecDeque::new(), delay_timer: 0, sound_timer: 0 };
+    pub fn new() -> Self {
+        let mut chip8 = Chip8 {
+            memory: Memory::new(),
+            frame_buffer: FrameBuffer::default(),
+            stack: Vec::new(),
+            delay_timer: 0,
+            sound_timer: 0,
+            pc: Addr::PROGRAM_START,
+            i: Addr::new(0),
+            registers: [0; NUM_REGISTERS],
+        };
         chip8.load_font();
         chip8
     }
 
     fn load_font(&mut self) {
-        self.memory[0x050..0x09F+1].copy_from_slice(&FONT);
+        self.memory
+            .load(Addr::FONT_ZONE_START, &crate::font::FONT)
+            .expect("font always fits in memory");
     }
 
-    pub fn framebuffer(&self) -> &[[bool; 32]; 64] {
+    pub fn framebuffer(&self) -> &FrameBuffer {
         &self.frame_buffer
     }
 
-    pub fn load_rom<P: AsRef<Path>>(&mut self, path : P) -> std::io::Result<()> {
-        let mut rom = File::open(path)?;
-        let max = self.memory.len() - PROGRAM_START;
-        let mut buf= Vec::new();
-        let n_read_bytes = rom.read_to_end(&mut buf)?;
-        if n_read_bytes > max {
-            return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("ROM is {} bytes; max is {max}", n_read_bytes),
-        ));
-        }
-        self.memory[PROGRAM_START..PROGRAM_START+n_read_bytes].copy_from_slice(&buf);
-        Ok(())
+    pub fn load_rom<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Chip8Error> {
+        let rom = std::fs::read(path)?;
+        self.memory.load(Addr::PROGRAM_START, &rom)
     }
 }
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+impl Default for Chip8 {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -74,8 +68,5 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+    fn it_works() {}
 }
