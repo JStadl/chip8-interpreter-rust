@@ -41,6 +41,8 @@ impl Memory {
         Memory([0; 4096])
     }
 
+    // For loading roms and font etc, where wrapping etc would be a fault of the interpreter, 
+    // not the underlying program
     pub fn load(&mut self, start: Addr, data: &[u8]) -> Result<(), Chip8Error> {
         let begin = start.0 as usize;
         let end = begin + data.len();

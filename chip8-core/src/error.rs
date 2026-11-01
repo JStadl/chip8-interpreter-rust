@@ -3,6 +3,8 @@ use std::fmt;
 pub enum Chip8Error {
     Io(std::io::Error),
     MemoryOverflow { start: usize, len: usize },
+    OutOfBoundsRead { start: usize, len: usize },
+
 }
 
 impl fmt::Display for Chip8Error {
@@ -11,6 +13,9 @@ impl fmt::Display for Chip8Error {
             Chip8Error::Io(e) => write!(f, "I/O error: {e}"),
             Chip8Error::MemoryOverflow { start, len } => {
                 write!(f, "{len} bytes at {start:#05X} would overflow memory")
+            }
+            Chip8Error::OutOfBoundsRead { start, len } => {
+                write!(f, "{len} bytes at {start:#05X} would read past end of memory")
             }
         }
     }

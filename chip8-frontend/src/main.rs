@@ -1,4 +1,5 @@
 use core::panic;
+use std::{thread::sleep, time::{Duration, Instant}};
 
 use chip8_core::{Chip8, FrameBuffer, SCREEN_HEIGHT, SCREEN_WIDTH};
 use minifb::{Window, WindowOptions};
@@ -36,10 +37,16 @@ fn main() {
         }
     };
     println!("Hello, world!");
+    let target_freq: i32 = 700;
+    let interval = Duration::from_micros((1e6 as i32 / target_freq).try_into().unwrap());
+    let mut next_time = Instant::now() + interval;
     while window.is_open() {
+        
         // TODO OPTIMIZE: for now, redraw every step even if no display change
         redraw(chip8.framebuffer(), &mut window);
         chip8.step();
+        sleep(next_time - Instant::now());
+        next_time += interval;
 
     }
 }
