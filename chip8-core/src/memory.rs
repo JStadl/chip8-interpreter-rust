@@ -1,5 +1,3 @@
-use std::ops::Add;
-
 use crate::error::Chip8Error;
 const MEMORY_SIZE_BYTES: usize = 4096;
 
@@ -33,14 +31,6 @@ impl Addr {
     }
 }
 
-impl Add for Addr {
-    type Output = Addr;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Addr::new(self.0.wrapping_add(rhs.0))
-    }
-}
-
 pub struct Memory([u8; MEMORY_SIZE_BYTES]);
 
 impl std::ops::IndexMut<Addr> for Memory {
@@ -61,7 +51,7 @@ impl Memory {
         Memory([0; 4096])
     }
 
-    // For loading roms and font etc, where wrapping etc would be a fault of the interpreter, 
+    // For loading roms and font etc, where wrapping etc would be a fault of the interpreter,
     // not the underlying program
     pub fn load(&mut self, start: Addr, data: &[u8]) -> Result<(), Chip8Error> {
         let begin = start.0 as usize;

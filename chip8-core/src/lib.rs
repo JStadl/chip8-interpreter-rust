@@ -58,20 +58,10 @@ impl Chip8 {
         let rom = std::fs::read(path)?;
         self.memory.load(Addr::PROGRAM_START, &rom)
     }
-
-    
 }
 
 impl Default for Chip8 {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {}
 }
