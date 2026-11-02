@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use crate::error::Chip8Error;
 const MEMORY_SIZE_BYTES: usize = 4096;
 
@@ -16,8 +18,26 @@ impl Addr {
         Addr::new(self.0.wrapping_add(by))
     }
 
+    /// Like `offset`, but also reports whether the result went past 0xFFF.
+    pub fn overflowing_offset(self, by: u16) -> (Self, bool) {
+        let raw = self.0.wrapping_add(by);
+        (Addr::new(raw), raw > 0x0FFF)
+    }
+
     pub fn next_instruction(self) -> Self {
         self.offset(2)
+    }
+
+    pub fn prev_instruction(self) -> Self {
+        Addr::new(self.0.wrapping_sub(2))
+    }
+}
+
+impl Add for Addr {
+    type Output = Addr;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Addr::new(self.0.wrapping_add(rhs.0))
     }
 }
 

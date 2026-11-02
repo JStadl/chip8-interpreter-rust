@@ -19,10 +19,11 @@ pub struct Chip8 {
     frame_buffer: FrameBuffer,
     pc: Addr,
     i: Addr,
-    stack: Vec<Addr>, // stack size of 16
+    stack: Vec<Addr>,
     delay_timer: u8,
     sound_timer: u8,
     registers: [u8; NUM_REGISTERS],
+    prev_key_state: [bool; 16],
 }
 
 impl Chip8 {
@@ -36,6 +37,7 @@ impl Chip8 {
             pc: Addr::PROGRAM_START,
             i: Addr::new(0),
             registers: [0; NUM_REGISTERS],
+            prev_key_state: [false; 16],
         };
         chip8.load_font();
         chip8
@@ -55,6 +57,8 @@ impl Chip8 {
         let rom = std::fs::read(path)?;
         self.memory.load(Addr::PROGRAM_START, &rom)
     }
+
+    
 }
 
 impl Default for Chip8 {

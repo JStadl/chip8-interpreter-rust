@@ -12,13 +12,13 @@ impl Default for FrameBuffer {
 }
 
 impl FrameBuffer {
-    pub fn clear_display(&mut self) {
-        self.raw_buffer.fill(false);
-    }
     pub fn pixels(&self) -> &[bool; SCREEN_HEIGHT * SCREEN_WIDTH] {
         &self.raw_buffer
     }
-    pub fn flip_pixel(&mut self, x: u8, y: u8) -> bool {
+    pub(crate) fn clear_display(&mut self) {
+        self.raw_buffer.fill(false);
+    }
+    pub(crate) fn flip_pixel(&mut self, x: u8, y: u8) -> bool {
         let index = x as usize + y as usize * SCREEN_WIDTH;
         let was_on = self.raw_buffer[index];
         self.raw_buffer[index] = !self.raw_buffer[index];

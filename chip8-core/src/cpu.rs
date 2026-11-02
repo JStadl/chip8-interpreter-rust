@@ -1,5 +1,5 @@
 use crate::{Chip8, SCREEN_WIDTH, cpu::Instruction::*};
-use crate::{Addr, SCREEN_HEIGHT};
+use crate::{Addr, SCREEN_HEIGHT, font};
 
 enum Instruction {
     ClearScreen,                       // 00E0
@@ -52,14 +52,24 @@ enum AluOp {
 }
 
 impl Chip8 {
-    pub fn step(&mut self) {
+    pub fn is_beep(&self) -> bool {
+        self.sound_timer > 0
+    }
+
+    pub fn decrease_timers(&mut self) {
+        self.delay_timer = self.delay_timer.saturating_sub(1);
+        self.sound_timer = self.sound_timer.saturating_sub(1);
+
+    }
+    pub fn step(&mut self, key_state: &[bool; 16]) {
         let instr = Chip8::decode(self.fetch());
-        self.execute(instr);
+        self.execute(instr, key_state);
+        self.prev_key_state = *key_state;
     }
 
     fn fetch(&mut self) ->  u16 {
         let ret = u16::from_be_bytes([self.memory[self.pc], self.memory[self.pc.offset(1)]]);
-        self.pc = self.pc.offset(2);
+        self.pc = self.pc.next_instruction();
         ret
     }
 
@@ -75,35 +85,161 @@ impl Chip8 {
         let nnn = Addr::new(instr); // Addr::new already masks to 12 bits
 
         match nibbles {
+
+
+
+            
             (0x0, 0x0, 0xE, 0x0) => ClearScreen,
+            (0x0, 0x0, 0xE, 0xE) => Return,
             (0x1, _, _, _) => Jump(nnn),
+            (0x2, _, _, _) => Call(nnn),
+            (0xB, _, _, _) => JumpOffset(nnn),
+
+            (0x3, _, _, _) => Skip(SkipCond::EqImm { x, value: nn }),
+            (0x4, _, _, _) => Skip(SkipCond::NeImm { x, value: nn }),
+            (0x5, _, _, 0x0) => Skip(SkipCond::EqReg { x, y }),
+            (0x9, _, _, 0x0) => Skip(SkipCond::NeReg { x, y }),
+            (0xE, _, 0x9, 0xE) => Skip(SkipCond::KeyDown { x }),
+            (0xE, _, 0xA, 0x1) => Skip(SkipCond::KeyUp { x }),
+
             (0x6, _, _, _) => SetImm{x, value: nn},
             (0x7, _, _, _) => AddImm { x, value: nn },
+
+            (0x8, _, _, 0x0) => Alu { op: AluOp::Set, x, y },
+            (0x8, _, _, 0x1) => Alu { op: AluOp::Or, x, y },
+            (0x8, _, _, 0x2) => Alu { op: AluOp::And, x, y },
+            (0x8, _, _, 0x3) => Alu { op: AluOp::Xor, x, y },
+            (0x8, _, _, 0x4) => Alu { op: AluOp::Add, x, y },
+            (0x8, _, _, 0x5) => Alu { op: AluOp::Sub, x, y },
+            (0x8, _, _, 0x6) => Alu { op: AluOp::ShiftRight, x, y },
+            (0x8, _, _, 0x7) => Alu { op: AluOp::SubN, x, y },
+            (0x8, _, _, 0xE) => Alu { op: AluOp::ShiftLeft, x, y },
+
+            (0xC, _, _, _) => Random { x, mask: nn },
+
             (0xA, _, _, _) => SetIndex(nnn),
+            (0xF, _, 0x1, 0xE) => AddIndex{x},
+            (0xF, _, 0x2, 0x9) => FontChar{x},
+            (0xF, _, 0x3, 0x3) => Bcd{x},
+            (0xF, _, 0x5, 0x5) => Store{x},
+            (0xF, _, 0x6, 0x5) => Load{x},
+
             (0xD, _, _, _) => Draw { x, y, n },
-            _ => todo!()
+
+            (0xF, _, 0x0, 0x7) => ReadDelay{x},
+            (0xF, _, 0x1, 0x5) => SetDelay{x},
+            (0xF, _, 0x1, 0x8) => SetSound{x},
+            (0xF, _, 0x0, 0xA) => WaitKey{x},
+            _ => panic!("Couldn't find this instruction definition")
         }
     }
 
-    fn execute(&mut self, instr: Instruction) {
+    fn execute(&mut self, instr: Instruction, key_state: &[bool; 16]) {
    
         match instr {
             ClearScreen => self.frame_buffer.clear_display(),
-            Return => todo!(),
+            Return => self.pc = self.stack.pop().expect("Stack is empty"),
             Jump(addr) => self.pc = addr,
-            Call(addr) => todo!(),
-            JumpOffset(addr) => todo!(),
-            Skip(skip_cond) => todo!(),
+            Call(addr) => {
+                self.stack.push(self.pc);
+                self.pc = addr
+            },
+            JumpOffset(addr) => {
+                // TODO: this is ambiguously defined, maybe make configurable
+                self.pc = addr + Addr::new(self.registers[0x0].into());
+            },
+            Skip(skip_cond) => {
+                let skip = match skip_cond {
+                    SkipCond::EqImm { x, value } => self.registers[x as usize] == value,
+                    SkipCond::NeImm { x, value } => !(self.registers[x as usize] == value),
+                    SkipCond::EqReg { x, y } => self.registers[x as usize] == self.registers[y as usize],
+                    SkipCond::NeReg { x, y } => !(self.registers[x as usize] == self.registers[y as usize]),
+                    SkipCond::KeyDown { x } => key_state[self.registers[x as usize] as usize & 0xF],
+                    SkipCond::KeyUp { x } => !(key_state[self.registers[x as usize] as usize & 0xF]),
+                };
+                if skip {
+                    self.pc = self.pc.next_instruction();
+                }
+            },
             SetImm { x, value } => self.registers[x as usize] = value,
-            AddImm { x, value } => self.registers[x as usize] += value,
-            Alu { op, x, y } => todo!(),
-            Random { x, mask } => todo!(),
+            AddImm { x, value } => self.registers[x as usize] = self.registers[x as usize].wrapping_add(value),
+            Alu { op, x, y } => {
+                match op {
+                    AluOp::Set => self.registers[x as usize] = self.registers[y as usize],
+                    AluOp::Or => self.registers[x as usize] |= self.registers[y as usize],
+                    AluOp::And => self.registers[x as usize] &= self.registers[y as usize],
+                    AluOp::Xor => self.registers[x as usize] ^= self.registers[y as usize],
+                    AluOp::Add => {
+                        let (val, overflowed) = self.registers[x as usize].overflowing_add(self.registers[y as usize]);
+                        self.registers[0xF] = overflowed as u8;
+                        self.registers[x as usize] = val;
+                    },
+                    AluOp::Sub => {
+                        let (val, overflowed) = self.registers[x as usize].overflowing_sub(self.registers[y as usize]);
+                        self.registers[0xF] = !overflowed as u8;
+                        self.registers[x as usize] = val;
+                    },
+                    AluOp::SubN => {
+                        let (val, overflowed) = self.registers[y as usize].overflowing_sub(self.registers[x as usize]);
+                        self.registers[0xF] = !overflowed as u8;
+                        self.registers[x as usize] = val;
+                    },
+                    AluOp::ShiftRight => {
+                        // TODO: Quirk here, maybe make configurable
+                        if self.registers[x as usize] & 0x1 == 1 {
+                            self.registers[0xF] = 1;
+                        } else {
+                            self.registers[0xF] = 0;
+                        }
+                        self.registers[x as usize] >>= 1;
+                    },
+                    AluOp::ShiftLeft => {
+                        // TODO: Quirk here, maybe make configurable
+                        if (self.registers[x as usize] >> 7) & 0x1 == 1 {
+                            self.registers[0xF] = 1;
+                        } else {
+                            self.registers[0xF] = 0;
+                        }
+                        self.registers[x as usize] <<= 1;
+                    },
+                }
+            },
+            Random { x, mask } => {
+                self.registers[x as usize] = rand::random_range(0..u8::MAX) & mask;
+            },
             SetIndex(addr) => self.i = addr,
-            AddIndex { x } => todo!(),
-            FontChar { x } => todo!(),
-            Bcd { x } => todo!(),
-            Store { x } => todo!(),
-            Load { x } => todo!(),
+            AddIndex { x } => {
+                let (new_i, overflowed) = self.i.overflowing_offset(u16::from(self.registers[x as usize]));
+                self.i = new_i;
+                // TODO: Quirk, maybe make configurable
+                self.registers[0xF] = overflowed as u8;
+            },
+            FontChar { x } => {
+                let char = x & 0x0F;
+                self.i = Addr::FONT_ZONE_START.offset(char as u16 * font::FONT_CHAR_SIZE_BYTES);
+            },
+            Bcd { x } => {
+                let num = self.registers[x as usize];
+                let units = num % 10;
+                let tens = (num % 100 - units) / 10;
+                let hundreds = (num - units - tens) / 100;
+                dbg!(num, units, tens, hundreds);
+                self.memory[self.i] = hundreds;
+                self.memory[self.i.offset(1)] = tens;
+                self.memory[self.i.offset(2)] = units;
+            },
+            Store { x } => {
+                // TODO ambiguous quirk
+                for i in 0..x+1 {
+                    self.memory[self.i.offset(i.into())] = self.registers[i as usize];
+                }
+            },
+            Load { x } => {
+                // TODO ambiguous quirk
+                for i in 0..x+1 {
+                    self.registers[i as usize] = self.memory[self.i.offset(i.into())];
+                }
+            },
             Draw { x, y, n } => {
                 let x = self.registers[x as usize] % SCREEN_WIDTH as u8;
                 let y = self.registers[y as usize] % SCREEN_HEIGHT as u8;
@@ -135,10 +271,12 @@ impl Chip8 {
 
 
             },
-            ReadDelay { x } => todo!(),
-            SetDelay { x } => todo!(),
-            SetSound { x } => todo!(),
-            WaitKey { x } => todo!(),
+            ReadDelay { x } => self.registers[x as usize] = self.delay_timer,
+            SetDelay { x } => self.delay_timer = self.registers[x as usize],
+            SetSound { x } => self.sound_timer = self.registers[x as usize],
+            WaitKey { x } => if self.prev_key_state == *key_state {
+                self.pc = self.pc.prev_instruction();
+            },
         }
     }
 }
