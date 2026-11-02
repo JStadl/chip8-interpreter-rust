@@ -30,7 +30,7 @@ fn keypad_state(window: &Window) -> [bool; 16] {
 
 fn main() {
     let mut chip8: Chip8 = Chip8::default();
-    if chip8.load_rom("./roms/3-corax+.ch8").is_err() {
+    if chip8.load_rom("./roms/4-flags.ch8").is_err() {
         // TODO let user specify another
         panic!("Couldn't load rom, try another");
     }

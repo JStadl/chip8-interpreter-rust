@@ -171,36 +171,42 @@ impl Chip8 {
                     AluOp::Xor => self.registers[x as usize] ^= self.registers[y as usize],
                     AluOp::Add => {
                         let (val, overflowed) = self.registers[x as usize].overflowing_add(self.registers[y as usize]);
-                        self.registers[0xF] = overflowed as u8;
                         self.registers[x as usize] = val;
+                        self.registers[0xF] = overflowed as u8;
                     },
                     AluOp::Sub => {
                         let (val, overflowed) = self.registers[x as usize].overflowing_sub(self.registers[y as usize]);
-                        self.registers[0xF] = !overflowed as u8;
                         self.registers[x as usize] = val;
+                        self.registers[0xF] = !overflowed as u8;
                     },
                     AluOp::SubN => {
                         let (val, overflowed) = self.registers[y as usize].overflowing_sub(self.registers[x as usize]);
-                        self.registers[0xF] = !overflowed as u8;
                         self.registers[x as usize] = val;
+                        self.registers[0xF] = !overflowed as u8;
                     },
                     AluOp::ShiftRight => {
                         // TODO: Quirk here, maybe make configurable
+                        let mut flag = 0;
                         if self.registers[x as usize] & 0x1 == 1 {
-                            self.registers[0xF] = 1;
+                            flag = 1;
                         } else {
-                            self.registers[0xF] = 0;
+                            flag = 0;
                         }
                         self.registers[x as usize] >>= 1;
+                        self.registers[0xF] = flag;
+
                     },
                     AluOp::ShiftLeft => {
                         // TODO: Quirk here, maybe make configurable
+                        let mut flag = 0;
                         if (self.registers[x as usize] >> 7) & 0x1 == 1 {
-                            self.registers[0xF] = 1;
+                            flag = 1;
                         } else {
-                            self.registers[0xF] = 0;
+                            flag = 0;
                         }
                         self.registers[x as usize] <<= 1;
+                        self.registers[0xF] = flag;
+
                     },
                 }
             },
