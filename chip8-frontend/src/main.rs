@@ -4,6 +4,9 @@ use std::{thread::sleep, time::{Duration, Instant}};
 use chip8_core::{Chip8, FrameBuffer, SCREEN_HEIGHT, SCREEN_WIDTH};
 use minifb::{Key, Window, WindowOptions};
 
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source};
+use rodio::source::SquareWave;
+
 const PIXEL_ON_VAL:u32 = u32::MAX;
 const PIXEL_OFF_VAL:u32 = 0;
 
@@ -28,10 +31,34 @@ fn keypad_state(window: &Window) -> [bool; 16] {
     KEYMAP.map(|k| window.is_key_down(k))
 }
 
+struct Beeper {
+    _sink: MixerDeviceSink, // must stay alive, or audio stops
+    player: Player,
+    playing: bool,
+}
+
+impl Beeper {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let sink = DeviceSinkBuilder::open_default_sink()?;
+        let player = Player::connect_new(sink.mixer());
+
+        player.append(SquareWave::new(440.0).amplify(0.2));
+        player.pause(); // start silent
+
+        Ok(Beeper { _sink: sink, player, playing: false })
+    }
+
+    fn set(&mut self, beeping: bool) {
+        if beeping != self.playing {
+            if beeping { self.player.play() } else { self.player.pause() }
+            self.playing = beeping;
+        }
+    }
+}
 fn main() {
     let mut chip8: Chip8 = Chip8::default();
-    if chip8.load_rom("./roms/6-keypad.ch8").is_err() {
-        // TODO let user specify another
+    if chip8.load_rom("./roms/7-beep.ch8").is_err() {
+        // TODO let user specify anotherc
         panic!("Couldn't load rom, try another");
     }
     let mut window = match Window::new(
@@ -49,6 +76,8 @@ fn main() {
             panic!("Unable to create window {}", err)
         }
     };
+    let mut beeper = Beeper::new().expect("Couldn't create beep output");
+
     let refresh_rate = 60.0;
     let steps_per_refresh: f64 = 700.0 / refresh_rate;
     let interval = Duration::from_secs_f64(1.0/refresh_rate);
@@ -57,9 +86,7 @@ fn main() {
         
         redraw(chip8.framebuffer(), &mut window);
         chip8.tick_timers();
-        if chip8.is_beep() {
-            actually_beep::beep_with_hz_and_millis(329, (1.0/refresh_rate) as u32).unwrap();
-        }
+        beeper.set(chip8.is_beep());
         for _ in 0..steps_per_refresh as i64 {
             chip8.step(&keypad_state(&window));
         }
