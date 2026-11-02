@@ -56,12 +56,16 @@ impl Chip8 {
         self.sound_timer > 0
     }
 
-    pub fn decrease_timers(&mut self) {
+    pub fn tick_timers(&mut self) {
         self.delay_timer = self.delay_timer.saturating_sub(1);
         self.sound_timer = self.sound_timer.saturating_sub(1);
+        self.waiting_for_vblank = false;
 
     }
     pub fn step(&mut self, key_state: &[bool; 16]) {
+        if self.waiting_for_vblank {
+            return;
+        }
         let instr = Chip8::decode(self.fetch());
         self.execute(instr, key_state);
         self.prev_key_state = *key_state;
@@ -85,10 +89,6 @@ impl Chip8 {
         let nnn = Addr::new(instr); // Addr::new already masks to 12 bits
 
         match nibbles {
-
-
-
-            
             (0x0, 0x0, 0xE, 0x0) => ClearScreen,
             (0x0, 0x0, 0xE, 0xE) => Return,
             (0x1, _, _, _) => Jump(nnn),
@@ -130,7 +130,9 @@ impl Chip8 {
             (0xF, _, 0x1, 0x5) => SetDelay{x},
             (0xF, _, 0x1, 0x8) => SetSound{x},
             (0xF, _, 0x0, 0xA) => WaitKey{x},
-            _ => panic!("Couldn't find this instruction definition")
+            _ => {
+                panic!("Couldn't find this instruction definition")
+            }
         }
     }
 
@@ -145,7 +147,6 @@ impl Chip8 {
                 self.pc = addr
             },
             JumpOffset(addr) => {
-                // TODO: this is ambiguously defined, maybe make configurable
                 self.pc = addr + Addr::new(self.registers[0x0].into());
             },
             Skip(skip_cond) => {
@@ -166,9 +167,18 @@ impl Chip8 {
             Alu { op, x, y } => {
                 match op {
                     AluOp::Set => self.registers[x as usize] = self.registers[y as usize],
-                    AluOp::Or => self.registers[x as usize] |= self.registers[y as usize],
-                    AluOp::And => self.registers[x as usize] &= self.registers[y as usize],
-                    AluOp::Xor => self.registers[x as usize] ^= self.registers[y as usize],
+                    AluOp::Or => {
+                        self.registers[x as usize] |= self.registers[y as usize];
+                        self.registers[0xF] = 0;
+                    },
+                    AluOp::And => {
+                        self.registers[x as usize] &= self.registers[y as usize];
+                        self.registers[0xF] = 0;
+                    },
+                    AluOp::Xor => {
+                        self.registers[x as usize] ^= self.registers[y as usize];
+                        self.registers[0xF] = 0;
+                    },
                     AluOp::Add => {
                         let (val, overflowed) = self.registers[x as usize].overflowing_add(self.registers[y as usize]);
                         self.registers[x as usize] = val;
@@ -185,25 +195,23 @@ impl Chip8 {
                         self.registers[0xF] = !overflowed as u8;
                     },
                     AluOp::ShiftRight => {
-                        // TODO: Quirk here, maybe make configurable
-                        let mut flag = 0;
-                        if self.registers[x as usize] & 0x1 == 1 {
-                            flag = 1;
+                        self.registers[x as usize] = self.registers[y as usize];
+                        let flag: u8 = if self.registers[x as usize] & 0x1 == 1 {
+                            1
                         } else {
-                            flag = 0;
-                        }
+                            0
+                        };
                         self.registers[x as usize] >>= 1;
                         self.registers[0xF] = flag;
 
                     },
                     AluOp::ShiftLeft => {
-                        // TODO: Quirk here, maybe make configurable
-                        let mut flag = 0;
-                        if (self.registers[x as usize] >> 7) & 0x1 == 1 {
-                            flag = 1;
+                        self.registers[x as usize] = self.registers[y as usize];
+                        let flag = if (self.registers[x as usize] >> 7) & 0x1 == 1 {
+                            1
                         } else {
-                            flag = 0;
-                        }
+                            0
+                        };
                         self.registers[x as usize] <<= 1;
                         self.registers[0xF] = flag;
 
@@ -217,7 +225,6 @@ impl Chip8 {
             AddIndex { x } => {
                 let (new_i, overflowed) = self.i.overflowing_offset(u16::from(self.registers[x as usize]));
                 self.i = new_i;
-                // TODO: Quirk, maybe make configurable
                 self.registers[0xF] = overflowed as u8;
             },
             FontChar { x } => {
@@ -229,21 +236,21 @@ impl Chip8 {
                 let units = num % 10;
                 let tens = (num % 100 - units) / 10;
                 let hundreds = (num - units - tens) / 100;
-                dbg!(num, units, tens, hundreds);
                 self.memory[self.i] = hundreds;
                 self.memory[self.i.offset(1)] = tens;
                 self.memory[self.i.offset(2)] = units;
             },
             Store { x } => {
-                // TODO ambiguous quirk
                 for i in 0..x+1 {
-                    self.memory[self.i.offset(i.into())] = self.registers[i as usize];
+                    self.memory[self.i] = self.registers[i as usize];
+                    self.i = self.i.offset(1);
                 }
             },
             Load { x } => {
-                // TODO ambiguous quirk
                 for i in 0..x+1 {
-                    self.registers[i as usize] = self.memory[self.i.offset(i.into())];
+                    self.registers[i as usize] = self.memory[self.i];
+                    self.i = self.i.offset(1);
+
                 }
             },
             Draw { x, y, n } => {
@@ -274,14 +281,21 @@ impl Chip8 {
                         }
                     }  
                 }
-
+                self.waiting_for_vblank = true;
 
             },
             ReadDelay { x } => self.registers[x as usize] = self.delay_timer,
             SetDelay { x } => self.delay_timer = self.registers[x as usize],
             SetSound { x } => self.sound_timer = self.registers[x as usize],
-            WaitKey { x } => if self.prev_key_state == *key_state {
+            WaitKey { x } => {
+                for (i, val) in key_state.iter().enumerate() {
+                    if !self.prev_key_state[i] && *val {
+                        self.registers[x as usize] = i as u8;
+                        return;
+                    }
+                }
                 self.pc = self.pc.prev_instruction();
+
             },
         }
     }

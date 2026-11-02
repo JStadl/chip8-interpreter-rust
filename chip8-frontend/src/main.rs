@@ -49,22 +49,20 @@ fn main() {
             panic!("Unable to create window {}", err)
         }
     };
-    println!("Hello, world!");
     let refresh_rate = 60.0;
-    let steps_per_refresh: f64 = (700.0 / refresh_rate);
+    let steps_per_refresh: f64 = 700.0 / refresh_rate;
     let interval = Duration::from_secs_f64(1.0/refresh_rate);
     let mut next_time = Instant::now() + interval;
     while window.is_open() {
         
         redraw(chip8.framebuffer(), &mut window);
-        chip8.decrease_timers();
+        chip8.tick_timers();
         if chip8.is_beep() {
             actually_beep::beep_with_hz_and_millis(329, (1.0/refresh_rate) as u32).unwrap();
         }
         for _ in 0..steps_per_refresh as i64 {
             chip8.step(&keypad_state(&window));
         }
-        // TODO OPTIMIZE: for now, redraw every refresh even if no display change
         sleep(next_time - Instant::now());
         next_time += interval;
     }

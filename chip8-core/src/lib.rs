@@ -24,8 +24,8 @@ pub struct Chip8 {
     sound_timer: u8,
     registers: [u8; NUM_REGISTERS],
     prev_key_state: [bool; 16],
+    waiting_for_vblank: bool,
 }
-
 impl Chip8 {
     pub fn new() -> Self {
         let mut chip8 = Chip8 {
@@ -38,6 +38,7 @@ impl Chip8 {
             i: Addr::new(0),
             registers: [0; NUM_REGISTERS],
             prev_key_state: [false; 16],
+            waiting_for_vblank: false,
         };
         chip8.load_font();
         chip8
