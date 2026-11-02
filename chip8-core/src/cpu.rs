@@ -289,7 +289,7 @@ impl Chip8 {
             SetSound { x } => self.sound_timer = self.registers[x as usize],
             WaitKey { x } => {
                 for (i, val) in key_state.iter().enumerate() {
-                    if !self.prev_key_state[i] && *val {
+                    if self.prev_key_state[i] && !*val {
                         self.registers[x as usize] = i as u8;
                         return;
                     }
